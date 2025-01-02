@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package inner;
+
+service Inner {
+  rpc StreamRequests(Void) returns (stream IncomingRequest) {}
+  rpc SendResponse(OutgoingResponse) returns (Void) {}
+}
+
+message Void {}
+
+// The response message containing the greetings
+message IncomingRequest {
+    uint64 id = 1;
+    string method = 2;
+    string uri = 3;
+    repeated Header headers = 4;
+    bytes body = 5;
+}
+
+message OutgoingResponse {
+    uint64 id = 1;
+    uint32 status = 2;
+    repeated Header headers = 3;
+    bytes body = 4;
+}
+
+message Header {
+    bytes name = 1;
+    bytes value = 2;
+}
