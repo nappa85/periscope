@@ -1,16 +1,18 @@
 [package]
-name = "periscope-client"
+name = "porcoc"
 version.workspace = true
 edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+common = { workspace = true }
 prost = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
-tokio-stream = { workspace = true, features = ["sync"] }
-tonic = { workspace = true }
+tokio-rustls = { workspace = true }
+tokio-stream = { workspace = true }
+tonic = { workspace = true, features = ["tls"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 

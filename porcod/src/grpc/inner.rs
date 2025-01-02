@@ -5,8 +5,6 @@ use std::{
     task::{ready, Context, Poll},
 };
 
-use http::{HeaderName, HeaderValue, StatusCode};
-use hyper::body::Bytes;
 use tokio::sync::{
     broadcast::{self, Receiver, Sender},
     mpsc, oneshot, Mutex, MutexGuard,
@@ -20,7 +18,7 @@ tonic::include_proto!("inner");
 #[derive(Debug)]
 pub struct Inner {
     id_manager: IdManager,
-    broacast_tx: Sender<IncomingRequest>,
+    broacast_tx: Sender<common::grpc::IncomingRequest>,
 }
 
 impl Inner {
@@ -37,7 +35,9 @@ impl Inner {
                     let mut id_manager = id_manager.lock().await;
                     let id = id_manager.inc_id();
                     id_manager.receivers.insert(id, oneshot_tx);
-                    if let Err(err) = broacast_tx.send(IncomingRequest::from((id, request))) {
+                    if let Err(err) =
+                        broacast_tx.send(common::grpc::IncomingRequest::from((id, request)))
+                    {
                         error!("{err}");
                     }
                 }
@@ -57,7 +57,7 @@ impl inner_server::Inner for Inner {
 
     async fn stream_requests(
         &self,
-        _: Request<Void>,
+        _: Request<common::grpc::Void>,
     ) -> Result<Response<Self::StreamRequestsStream>, Status> {
         Ok(Response::new(StreamRequestsStream::new(
             self.id_manager.clone(),
@@ -67,8 +67,8 @@ impl inner_server::Inner for Inner {
 
     async fn send_response(
         &self,
-        request: Request<OutgoingResponse>,
-    ) -> Result<Response<Void>, Status> {
+        request: Request<common::grpc::OutgoingResponse>,
+    ) -> Result<Response<common::grpc::Void>, Status> {
         let response = request.into_inner();
         let oneshot_tx = {
             let mut id_manager = self.id_manager.lock().await;
@@ -77,11 +77,11 @@ impl inner_server::Inner for Inner {
                 .remove(&response.id)
                 .ok_or_else(|| Status::invalid_argument("Invalid request id"))?
         };
-        let response = crate::OutgoingResponse::try_from(response)?;
+        let response = common::OutgoingResponse::try_from(response)?;
         if oneshot_tx.send(response).is_err() {
             return Err(Status::deadline_exceeded("Timed out"));
         }
-        Ok(Response::new(Void {}))
+        Ok(Response::new(common::grpc::Void {}))
     }
 }
 
@@ -94,10 +94,20 @@ impl IdManager {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct IdManagerInner {
     next_id: u64,
-    receivers: HashMap<u64, oneshot::Sender<crate::OutgoingResponse>>,
+    receivers: HashMap<u64, oneshot::Sender<common::OutgoingResponse>>,
+}
+
+impl Default for IdManagerInner {
+    fn default() -> Self {
+        // id 0 is used on error
+        Self {
+            next_id: 1,
+            receivers: HashMap::default(),
+        }
+    }
 }
 
 impl IdManagerInner {
@@ -112,12 +122,12 @@ pin_project_lite::pin_project! {
     pub struct StreamRequestsStream {
         id_manager: IdManager,
         #[pin]
-        stream: BroadcastStream<IncomingRequest>,
+        stream: BroadcastStream<common::grpc::IncomingRequest>,
     }
 }
 
 impl StreamRequestsStream {
-    fn new(id_manager: IdManager, request_rx: Receiver<IncomingRequest>) -> Self {
+    fn new(id_manager: IdManager, request_rx: Receiver<common::grpc::IncomingRequest>) -> Self {
         Self {
             id_manager,
             stream: BroadcastStream::new(request_rx),
@@ -126,7 +136,7 @@ impl StreamRequestsStream {
 }
 
 impl Stream for StreamRequestsStream {
-    type Item = Result<IncomingRequest, Status>;
+    type Item = Result<common::grpc::IncomingRequest, Status>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
@@ -136,73 +146,5 @@ impl Stream for StreamRequestsStream {
                 res.map_err(|err| Status::resource_exhausted(err.to_string())),
             )),
         }
-    }
-}
-
-impl From<(u64, crate::IncomingRequest)> for IncomingRequest {
-    fn from((id, request): (u64, crate::IncomingRequest)) -> Self {
-        let crate::IncomingRequest {
-            method,
-            uri,
-            headers,
-            body,
-        } = request;
-
-        let method = method.as_str().to_owned();
-        let uri = uri.to_string();
-        let headers = headers
-            .into_iter()
-            .map(|(k, v)| Header {
-                name: k.as_str().as_bytes().to_owned(),
-                value: v.as_bytes().to_owned(),
-            })
-            .collect();
-        let body = body.to_vec();
-
-        Self {
-            id,
-            uri,
-            method,
-            headers,
-            body,
-        }
-    }
-}
-
-impl TryFrom<OutgoingResponse> for crate::OutgoingResponse {
-    type Error = Status;
-
-    fn try_from(value: OutgoingResponse) -> Result<Self, Self::Error> {
-        let OutgoingResponse {
-            id: _,
-            status,
-            headers,
-            body,
-        } = value;
-
-        let status =
-            u16::try_from(status).map_err(|_| Status::invalid_argument("Invalid status"))?;
-        let status = StatusCode::from_u16(status)
-            .map_err(|_| Status::invalid_argument("Invalid status code"))?;
-        let headers = headers
-            .into_iter()
-            .map(|header| {
-                match (
-                    HeaderName::from_bytes(&header.name),
-                    HeaderValue::from_bytes(&header.value),
-                ) {
-                    (Err(err), _) => Err(Status::invalid_argument(err.to_string())),
-                    (_, Err(err)) => Err(Status::invalid_argument(err.to_string())),
-                    (Ok(k), Ok(v)) => Ok((k, v)),
-                }
-            })
-            .collect::<Result<_, _>>()?;
-        let body = Bytes::from(body);
-
-        Ok(Self {
-            status,
-            headers,
-            body,
-        })
     }
 }

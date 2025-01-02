@@ -1,0 +1,13 @@
+[package]
+name = "common"
+version.workspace = true
+edition = "2021"
+
+[dependencies]
+hyper = { workspace = true }
+http = { workspace = true }
+prost = { workspace = true }
+tonic = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }

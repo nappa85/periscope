@@ -1,20 +1,32 @@
 [package]
-name = "periscope-server"
+name = "porcod"
 version.workspace = true
 edition = "2021"
+
+[features]
+default = []
+ring = ["rustls/ring"]
+aws-lc-rs = ["rustls/aws-lc-rs"]
 
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+common = { workspace = true }
 hyper = { workspace = true }
+hyper-util = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
+regex = { workspace = true }
+rustls = { workspace = true, default-features = false }
+rustls-pemfile = { workspace = true }
 pin-project-lite = { workspace = true }
 prost = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
+tokio-rustls = { workspace = true }
 tokio-stream = { workspace = true, features = ["sync"] }
 tonic = { workspace = true }
+tower = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
